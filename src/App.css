@@ -1,0 +1,354 @@
+.app-shell {
+  min-height: 100svh;
+  padding: 20px;
+  background:
+    radial-gradient(circle at top left, rgba(37, 160, 181, 0.16), transparent 34rem),
+    linear-gradient(180deg, #f7fcfb 0%, #eef7fb 100%);
+}
+
+.practice-panel {
+  width: min(100%, 520px);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.app-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 2px 4px;
+}
+
+.app-header h1 {
+  margin: 0;
+  color: #102027;
+  font-size: clamp(1.7rem, 8vw, 2.55rem);
+  line-height: 1;
+}
+
+.app-header p {
+  max-width: 18rem;
+  margin: 8px 0 0;
+  color: #53656d;
+  font-size: 0.95rem;
+}
+
+.mini-score {
+  min-width: 78px;
+  padding: 9px 10px;
+  border: 1px solid #d8ebe9;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.82);
+  color: #173238;
+  text-align: center;
+  box-shadow: 0 8px 18px rgba(26, 70, 84, 0.07);
+}
+
+.mini-score span,
+.mini-score small {
+  display: block;
+}
+
+.mini-score span {
+  font-weight: 800;
+}
+
+.mini-score small {
+  margin-top: 2px;
+  color: #60747a;
+  font-size: 0.74rem;
+}
+
+.control-block {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.topic-block {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.mode-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 4px;
+  border: 1px solid #d7e9e8;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.mode-switch button {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+button {
+  min-height: 44px;
+  border: 1px solid #cce4e3;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #143037;
+  font: inherit;
+  font-weight: 750;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+button:hover:not(:disabled) {
+  border-color: #5caeb4;
+  box-shadow: 0 8px 18px rgba(36, 109, 122, 0.1);
+  transform: translateY(-1px);
+}
+
+button:focus-visible {
+  outline: 3px solid rgba(40, 164, 177, 0.35);
+  outline-offset: 2px;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+button.selected,
+button.selected-answer {
+  border-color: #158898;
+  background: #dff6f6;
+  color: #073d49;
+}
+
+.question-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 18px;
+  padding: 22px;
+  border: 1px solid #d7e9e8;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 24px 50px rgba(26, 70, 84, 0.11);
+}
+
+.lesson-label {
+  margin: 0;
+  color: #60747a;
+  font-size: 0.88rem;
+  font-weight: 750;
+  text-align: center;
+}
+
+.vertical-problem {
+  width: min(100%, 280px);
+  margin: 4px auto 0;
+  padding: 18px 24px 10px;
+  color: #102027;
+  font-family: 'Arial Rounded MT Bold', 'Trebuchet MS', Arial, sans-serif;
+  font-size: clamp(3rem, 17vw, 5.2rem);
+  font-variant-numeric: tabular-nums;
+  font-weight: 900;
+  line-height: 1.02;
+}
+
+.problem-row {
+  display: grid;
+  grid-template-columns: 0.65em 1fr;
+  align-items: end;
+  white-space: pre;
+}
+
+.problem-row span:last-child {
+  text-align: right;
+}
+
+.answer-line {
+  height: 7px;
+  margin-top: 10px;
+  border-radius: 999px;
+  background: #102027;
+}
+
+.hint {
+  margin: -4px 0 0;
+  padding: 12px 14px;
+  border-left: 4px solid #f3b23f;
+  border-radius: 6px;
+  background: #fff7e3;
+  color: #634400;
+  font-size: 0.96rem;
+  text-align: left;
+}
+
+.answer-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.answer-grid button {
+  min-height: 62px;
+  font-size: 1.35rem;
+}
+
+.answer-input {
+  display: grid;
+  gap: 8px;
+  text-align: left;
+}
+
+.answer-input span {
+  color: #60747a;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.answer-input input {
+  width: 100%;
+  min-height: 64px;
+  border: 2px solid #cce4e3;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #102027;
+  font: inherit;
+  font-size: 1.65rem;
+  font-weight: 850;
+  text-align: center;
+}
+
+.answer-input input:focus {
+  border-color: #158898;
+  outline: 3px solid rgba(40, 164, 177, 0.22);
+}
+
+.answer-input input:disabled {
+  background: #f5fbfb;
+  color: #60747a;
+}
+
+.feedback {
+  min-height: 1.55rem;
+  margin: 0;
+  color: #60747a;
+  font-weight: 750;
+  text-align: center;
+}
+
+.feedback.correct {
+  color: #167249;
+}
+
+.feedback.incorrect {
+  color: #b03a2e;
+}
+
+.action-row {
+  display: grid;
+  grid-template-columns: 0.8fr 1.2fr;
+  gap: 10px;
+}
+
+.primary {
+  border-color: #168998;
+  background: #168998;
+  color: #ffffff;
+}
+
+.primary:hover:not(:disabled) {
+  border-color: #0f6d7a;
+  background: #0f6d7a;
+}
+
+.secondary {
+  background: #f5fbfb;
+}
+
+.mistake-review {
+  border: 1px solid #d7e9e8;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.mistake-review summary {
+  padding: 14px 16px;
+  color: #173238;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.mistake-review p {
+  margin: 0;
+  padding: 0 16px 16px;
+  color: #60747a;
+}
+
+.mistake-review ul {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0 16px 16px;
+  list-style: none;
+}
+
+.mistake-review li {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: #f6fbfb;
+}
+
+.mistake-review small {
+  color: #60747a;
+}
+
+@media (max-width: 440px) {
+  .app-shell {
+    padding: 14px;
+  }
+
+  .app-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .mini-score {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    text-align: left;
+  }
+
+  .question-card {
+    padding: 18px;
+  }
+
+  .control-block {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .topic-block {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .topic-block button {
+    padding-inline: 4px;
+  }
+
+  .vertical-problem {
+    padding-inline: 10px;
+  }
+
+  .mistake-review li {
+    flex-direction: column;
+    gap: 2px;
+  }
+}
