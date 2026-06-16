@@ -475,21 +475,25 @@ function createArithmeticQuestion(grade, topic = 'mixed', difficulty = 'medium')
 
   const divisor = isBasicOperation ? randomFromRanges(basicRanges.divisor) : randomInt(2, grade.basicFactorMax)
   const answer = isBasicOperation ? randomFromRanges(basicRanges.divideAnswer) : randomInt(2, grade.basicFactorMax)
+  const divisionStyle = pick(['divide', 'slash', 'long'])
+
   return makeVerticalQuestion(
     divisor * answer,
     divisor,
-    '÷',
+    divisionStyle === 'slash' ? '/' : '÷',
     answer,
     'Bahagi ialah lawan darab. Fikir sifir yang sesuai.',
+    { divisionStyle },
   )
 }
 
-function makeVerticalQuestion(top, bottom, operator, answer, hint) {
+function makeVerticalQuestion(top, bottom, operator, answer, hint, options = {}) {
   return {
     display: 'vertical',
     top,
     bottom,
     operator,
+    divisionStyle: options.divisionStyle,
     answer,
     answerLabel: '',
     hint,
@@ -649,6 +653,16 @@ function describeQuestion(question) {
 }
 
 function VerticalProblem({ question }) {
+  if (question.divisionStyle === 'long') {
+    return (
+      <div className="vertical-problem long-division-problem" aria-label={describeQuestion(question)}>
+        <span className="long-divisor">{question.bottom}</span>
+        <span className="long-dividend">{question.top}</span>
+        <div className="answer-line"></div>
+      </div>
+    )
+  }
+
   const width = Math.max(
     String(question.top).length,
     String(question.bottom).length + 1,
@@ -958,6 +972,140 @@ function recognizeDigit(sourceCanvas) {
   }
 
   return best.score < 0.12 ? null : best.digit
+}
+
+function ScratchWorkspace({ status, text }) {
+  const canvasRef = useRef(null)
+  const drawingRef = useRef(null)
+  const undoStackRef = useRef([])
+  const [hasUndo, setHasUndo] = useState(false)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return undefined
+
+    function resizeCanvas() {
+      prepareDrawingCanvas(canvas, { grid: true })
+    }
+
+    resizeCanvas()
+    window.addEventListener('resize', resizeCanvas)
+
+    return () => window.removeEventListener('resize', resizeCanvas)
+  }, [])
+
+  function getCanvasPoint(event) {
+    const canvas = canvasRef.current
+    const rect = canvas.getBoundingClientRect()
+
+    return {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+    }
+  }
+
+  function startDrawing(event) {
+    if (status !== 'ready') return
+
+    const canvas = canvasRef.current
+    const context = canvas.getContext('2d')
+    const point = getCanvasPoint(event)
+
+    undoStackRef.current = [...undoStackRef.current.slice(-9), canvas.toDataURL()]
+    setHasUndo(true)
+    drawingRef.current = point
+    canvas.setPointerCapture(event.pointerId)
+
+    context.beginPath()
+    context.arc(point.x, point.y, 2, 0, Math.PI * 2)
+    context.fillStyle = '#14213d'
+    context.fill()
+  }
+
+  function draw(event) {
+    if (!drawingRef.current || status !== 'ready') return
+
+    const canvas = canvasRef.current
+    const context = canvas.getContext('2d')
+    const nextPoint = getCanvasPoint(event)
+
+    context.beginPath()
+    context.moveTo(drawingRef.current.x, drawingRef.current.y)
+    context.lineTo(nextPoint.x, nextPoint.y)
+    context.stroke()
+    drawingRef.current = nextPoint
+  }
+
+  function stopDrawing(event) {
+    drawingRef.current = null
+
+    if (canvasRef.current?.hasPointerCapture(event.pointerId)) {
+      canvasRef.current.releasePointerCapture(event.pointerId)
+    }
+  }
+
+  function clearCanvas() {
+    if (status !== 'ready') return
+
+    const canvas = canvasRef.current
+    const context = canvas.getContext('2d')
+    const rect = canvas.getBoundingClientRect()
+
+    context.fillStyle = '#ffffff'
+    context.fillRect(0, 0, rect.width, rect.height)
+    undoStackRef.current = []
+    setHasUndo(false)
+  }
+
+  function undoCanvas() {
+    if (status !== 'ready') return
+
+    const canvas = canvasRef.current
+    const snapshot = undoStackRef.current.pop()
+
+    if (!snapshot) return
+
+    const context = canvas.getContext('2d')
+    const rect = canvas.getBoundingClientRect()
+    const image = new Image()
+
+    image.onload = () => {
+      context.fillStyle = '#ffffff'
+      context.fillRect(0, 0, rect.width, rect.height)
+      context.drawImage(image, 0, 0, rect.width, rect.height)
+    }
+    image.src = snapshot
+    setHasUndo(undoStackRef.current.length > 0)
+  }
+
+  return (
+    <section className="work-panel practice-workspace" aria-labelledby="scratch-title">
+      <div className="work-panel-header">
+        <div>
+          <h2 id="scratch-title">{text.workArea}</h2>
+          <p>{text.workHint}</p>
+        </div>
+        <div className="work-tools">
+          <button className="secondary compact-button" type="button" onClick={undoCanvas} disabled={!hasUndo || status !== 'ready'}>
+            {text.undoWork}
+          </button>
+          <button className="secondary compact-button" type="button" onClick={clearCanvas} disabled={status !== 'ready'}>
+            {text.clearWork}
+          </button>
+        </div>
+      </div>
+      <canvas
+        ref={canvasRef}
+        className="scratch-canvas"
+        aria-label={text.workArea}
+        onPointerCancel={stopDrawing}
+        onPointerDown={startDrawing}
+        onPointerLeave={stopDrawing}
+        onPointerMove={draw}
+        onPointerUp={stopDrawing}
+      />
+    </section>
+  )
 }
 
 function WorkCanvas({ answerDigitCount, onSubmitAnswer, question, status, text }) {
@@ -1717,6 +1865,10 @@ function PracticeScreen({
             text={text}
           />
         )}
+
+        {answerMode !== 'work' ? (
+          <ScratchWorkspace key={`${questionKey}-${answerMode}`} status={status} text={text} />
+        ) : null}
 
         <p className={`feedback ${feedbackStatus}`}>{feedback}</p>
 

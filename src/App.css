@@ -282,6 +282,33 @@ button:disabled {
   background: #14213d;
 }
 
+.long-division-problem {
+  width: min(100%, 360px);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 0;
+  padding-top: 22px;
+}
+
+.long-divisor {
+  padding: 12px 14px 0 0;
+  text-align: right;
+}
+
+.long-dividend {
+  min-width: 1.8em;
+  padding: 12px 0 0 18px;
+  border-top: 7px solid #14213d;
+  border-left: 7px solid #14213d;
+  border-top-left-radius: 14px;
+  text-align: left;
+}
+
+.long-division-problem .answer-line {
+  grid-column: 2;
+}
+
 .text-problem {
   display: grid;
   gap: 12px;
@@ -382,6 +409,10 @@ button:disabled {
   background-size: 28px 28px;
   cursor: crosshair;
   touch-action: none;
+}
+
+.practice-workspace .scratch-canvas {
+  height: clamp(150px, 22svh, 230px);
 }
 
 .final-answer-panel {
