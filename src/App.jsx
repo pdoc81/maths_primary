@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 
 const grades = [
@@ -97,10 +97,23 @@ const uiText = {
     hideHint: 'Hide hint',
     check: 'Semak',
     next: 'Next',
+    answerMode: 'Cara jawab',
     inputMode: 'Input',
     mcqMode: 'MCQ',
+    workMode: 'Kerja',
+    clearWork: 'Padam',
+    undoWork: 'Undur',
+    submitWork: 'Semak kerja',
+    workArea: 'Ruang kerja',
+    workHint: 'Guna jari atau pensel untuk kira.',
+    finalAnswer: 'Jawapan akhir',
+    finalAnswerHint: 'Tulis satu digit dalam setiap kotak.',
+    recognizedAnswer: 'Dibaca',
+    readingWork: 'Membaca kerja...',
+    answerNotRead: 'Saya belum dapat baca jawapan itu.',
     writeAnswer: 'Tulis jawapan.',
     pickAnswer: 'Pilih jawapan.',
+    workAnswer: 'Tulis kerja dan jawapan akhir.',
     correct: 'Betul.',
     answerWas: 'Jawapan',
     score: 'Score',
@@ -130,10 +143,23 @@ const uiText = {
     hideHint: 'Hide hint',
     check: 'Check',
     next: 'Next',
+    answerMode: 'Answer mode',
     inputMode: 'Input',
     mcqMode: 'MCQ',
+    workMode: 'Work',
+    clearWork: 'Clear',
+    undoWork: 'Undo',
+    submitWork: 'Check work',
+    workArea: 'Working area',
+    workHint: 'Use your finger or pencil to work it out.',
+    finalAnswer: 'Final answer',
+    finalAnswerHint: 'Write one digit in each box.',
+    recognizedAnswer: 'Read as',
+    readingWork: 'Reading work...',
+    answerNotRead: 'I could not read that answer yet.',
     writeAnswer: 'Type the answer.',
     pickAnswer: 'Pick an answer.',
+    workAnswer: 'Show your working and final answer.',
     correct: 'Correct.',
     answerWas: 'Answer',
     score: 'Score',
@@ -653,6 +679,580 @@ function TextProblem({ question }) {
   )
 }
 
+function prepareDrawingCanvas(canvas, { grid = false } = {}) {
+  const snapshot = canvas.width > 0 && canvas.height > 0 ? canvas.toDataURL() : ''
+  const rect = canvas.getBoundingClientRect()
+  const scale = window.devicePixelRatio || 1
+
+  canvas.width = Math.max(1, Math.floor(rect.width * scale))
+  canvas.height = Math.max(1, Math.floor(rect.height * scale))
+
+  const context = canvas.getContext('2d')
+  context.setTransform(scale, 0, 0, scale, 0, 0)
+  context.lineCap = 'round'
+  context.lineJoin = 'round'
+  context.lineWidth = grid ? 4 : 8
+  context.strokeStyle = '#14213d'
+  context.fillStyle = '#ffffff'
+  context.fillRect(0, 0, rect.width, rect.height)
+
+  if (snapshot) {
+    const image = new Image()
+    image.onload = () => context.drawImage(image, 0, 0, rect.width, rect.height)
+    image.src = snapshot
+  }
+}
+
+function getInkBounds(canvas) {
+  const context = canvas.getContext('2d')
+  const { width, height } = canvas
+  const pixels = context.getImageData(0, 0, width, height).data
+  let left = width
+  let top = height
+  let right = 0
+  let bottom = 0
+  let inkCount = 0
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = (y * width + x) * 4
+      const isInk = pixels[index] < 180 && pixels[index + 1] < 180 && pixels[index + 2] < 180
+
+      if (isInk) {
+        left = Math.min(left, x)
+        top = Math.min(top, y)
+        right = Math.max(right, x)
+        bottom = Math.max(bottom, y)
+        inkCount += 1
+      }
+    }
+  }
+
+  if (inkCount < 8) return null
+
+  return { left, top, right, bottom, inkCount }
+}
+
+function normalizeDigitCanvas(sourceCanvas) {
+  const bounds = getInkBounds(sourceCanvas)
+  if (!bounds) return null
+
+  const size = 28
+  const padding = 3
+  const sourceWidth = bounds.right - bounds.left + 1
+  const sourceHeight = bounds.bottom - bounds.top + 1
+  const targetScale = Math.min((size - padding * 2) / sourceWidth, (size - padding * 2) / sourceHeight)
+  const targetWidth = sourceWidth * targetScale
+  const targetHeight = sourceHeight * targetScale
+  const targetCanvas = document.createElement('canvas')
+  const targetContext = targetCanvas.getContext('2d')
+
+  targetCanvas.width = size
+  targetCanvas.height = size
+  targetContext.fillStyle = '#ffffff'
+  targetContext.fillRect(0, 0, size, size)
+  targetContext.drawImage(
+    sourceCanvas,
+    bounds.left,
+    bounds.top,
+    sourceWidth,
+    sourceHeight,
+    (size - targetWidth) / 2,
+    (size - targetHeight) / 2,
+    targetWidth,
+    targetHeight,
+  )
+
+  return targetContext.getImageData(0, 0, size, size).data
+}
+
+function createDigitTemplates() {
+  const fonts = [
+    'bold 25px Arial',
+    'bold 25px Trebuchet MS',
+    'bold 25px Comic Sans MS',
+  ]
+
+  return Array.from({ length: 10 }, (_, digit) => {
+    const variants = fonts.map((font) => {
+      const canvas = document.createElement('canvas')
+      const context = canvas.getContext('2d')
+
+      canvas.width = 28
+      canvas.height = 28
+      context.fillStyle = '#ffffff'
+      context.fillRect(0, 0, 28, 28)
+      context.fillStyle = '#14213d'
+      context.font = font
+      context.textAlign = 'center'
+      context.textBaseline = 'middle'
+      context.fillText(String(digit), 14, 15)
+
+      return context.getImageData(0, 0, 28, 28).data
+    })
+
+    return { digit, variants }
+  })
+}
+
+function imageToBinary(data) {
+  const bits = []
+
+  for (let index = 0; index < data.length; index += 4) {
+    bits.push(data[index] < 190 && data[index + 1] < 190 && data[index + 2] < 190)
+  }
+
+  return bits
+}
+
+function compareDigitImages(input, template) {
+  const inputBits = imageToBinary(input)
+  const templateBits = imageToBinary(template)
+  let intersection = 0
+  let union = 0
+
+  for (let index = 0; index < inputBits.length; index += 1) {
+    if (inputBits[index] || templateBits[index]) union += 1
+    if (inputBits[index] && templateBits[index]) intersection += 1
+  }
+
+  return union === 0 ? 0 : intersection / union
+}
+
+function scoreRegion(bits, xMin, xMax, yMin, yMax) {
+  let ink = 0
+  let total = 0
+
+  for (let y = yMin; y < yMax; y += 1) {
+    for (let x = xMin; x < xMax; x += 1) {
+      total += 1
+      if (bits[y * 28 + x]) ink += 1
+    }
+  }
+
+  return total === 0 ? 0 : ink / total
+}
+
+function recognizeDigitBySegments(sourceCanvas) {
+  const normalized = normalizeDigitCanvas(sourceCanvas)
+  if (!normalized) return null
+
+  const bits = imageToBinary(normalized)
+  const segments = {
+    top: scoreRegion(bits, 8, 20, 0, 5) > 0.045,
+    upperLeft: scoreRegion(bits, 0, 6, 6, 12) > 0.045,
+    upperRight: scoreRegion(bits, 22, 28, 6, 12) > 0.045,
+    middle: scoreRegion(bits, 8, 20, 12, 16) > 0.045,
+    lowerLeft: scoreRegion(bits, 0, 6, 17, 23) > 0.045,
+    lowerRight: scoreRegion(bits, 22, 28, 17, 23) > 0.045,
+    bottom: scoreRegion(bits, 8, 20, 23, 28) > 0.045,
+  }
+  const digitSegments = {
+    0: ['top', 'upperLeft', 'upperRight', 'lowerLeft', 'lowerRight', 'bottom'],
+    1: ['upperRight', 'lowerRight'],
+    2: ['top', 'upperRight', 'middle', 'lowerLeft', 'bottom'],
+    3: ['top', 'upperRight', 'middle', 'lowerRight', 'bottom'],
+    4: ['upperLeft', 'upperRight', 'middle', 'lowerRight'],
+    5: ['top', 'upperLeft', 'middle', 'lowerRight', 'bottom'],
+    6: ['top', 'upperLeft', 'middle', 'lowerLeft', 'lowerRight', 'bottom'],
+    7: ['top', 'upperRight', 'lowerRight'],
+    8: ['top', 'upperLeft', 'upperRight', 'middle', 'lowerLeft', 'lowerRight', 'bottom'],
+    9: ['top', 'upperLeft', 'upperRight', 'middle', 'lowerRight', 'bottom'],
+  }
+  let best = { digit: null, score: -Infinity }
+
+  for (const [digit, activeSegments] of Object.entries(digitSegments)) {
+    const expected = new Set(activeSegments)
+    let score = 0
+
+    for (const segment of Object.keys(segments)) {
+      const isExpected = expected.has(segment)
+      const isActive = segments[segment]
+      score += isExpected === isActive ? 1 : -1.25
+    }
+
+    if (score > best.score) {
+      best = { digit: Number(digit), score }
+    }
+  }
+
+  return best.score < 1 ? null : best.digit
+}
+
+function recognizeDigitFromPoints(points) {
+  if (points.length < 2) return null
+
+  const xValues = points.map((point) => point.x)
+  const yValues = points.map((point) => point.y)
+  const left = Math.min(...xValues)
+  const right = Math.max(...xValues)
+  const top = Math.min(...yValues)
+  const bottom = Math.max(...yValues)
+  const width = Math.max(1, right - left)
+  const height = Math.max(1, bottom - top)
+  const normalizedPoints = points.map((point) => ({
+    x: ((point.x - left) / width) * 28,
+    y: ((point.y - top) / height) * 28,
+  }))
+  const countPoints = (xMin, xMax, yMin, yMax) =>
+    normalizedPoints.filter((point) => point.x >= xMin && point.x <= xMax && point.y >= yMin && point.y <= yMax).length
+  const threshold = Math.max(2, points.length * 0.025)
+  const segments = {
+    top: countPoints(7, 21, 0, 6) >= threshold,
+    upperLeft: countPoints(0, 7, 5, 13) >= threshold,
+    upperRight: countPoints(21, 28, 5, 13) >= threshold,
+    middle: countPoints(7, 21, 11, 17) >= threshold,
+    lowerLeft: countPoints(0, 7, 15, 23) >= threshold,
+    lowerRight: countPoints(21, 28, 15, 23) >= threshold,
+    bottom: countPoints(7, 21, 22, 28) >= threshold,
+  }
+  const digitSegments = {
+    0: ['top', 'upperLeft', 'upperRight', 'lowerLeft', 'lowerRight', 'bottom'],
+    1: ['upperRight', 'lowerRight'],
+    2: ['top', 'upperRight', 'middle', 'lowerLeft', 'bottom'],
+    3: ['top', 'upperRight', 'middle', 'lowerRight', 'bottom'],
+    4: ['upperLeft', 'upperRight', 'middle', 'lowerRight'],
+    5: ['top', 'upperLeft', 'middle', 'lowerRight', 'bottom'],
+    6: ['top', 'upperLeft', 'middle', 'lowerLeft', 'lowerRight', 'bottom'],
+    7: ['top', 'upperRight', 'lowerRight'],
+    8: ['top', 'upperLeft', 'upperRight', 'middle', 'lowerLeft', 'lowerRight', 'bottom'],
+    9: ['top', 'upperLeft', 'upperRight', 'middle', 'lowerRight', 'bottom'],
+  }
+  let best = { digit: null, score: -Infinity }
+
+  for (const [digit, activeSegments] of Object.entries(digitSegments)) {
+    const expected = new Set(activeSegments)
+    let score = 0
+
+    for (const segment of Object.keys(segments)) {
+      const isExpected = expected.has(segment)
+      const isActive = segments[segment]
+      score += isExpected === isActive ? 1 : -1.25
+    }
+
+    if (score > best.score) {
+      best = { digit: Number(digit), score }
+    }
+  }
+
+  return best.score < 1 ? null : best.digit
+}
+
+function recognizeDigit(sourceCanvas) {
+  const segmentDigit = recognizeDigitBySegments(sourceCanvas)
+  if (segmentDigit !== null) return segmentDigit
+
+  const normalized = normalizeDigitCanvas(sourceCanvas)
+  if (!normalized) return null
+
+  let best = { digit: null, score: 0 }
+
+  for (const template of createDigitTemplates()) {
+    for (const variant of template.variants) {
+      const score = compareDigitImages(normalized, variant)
+
+      if (score > best.score) {
+        best = { digit: template.digit, score }
+      }
+    }
+  }
+
+  return best.score < 0.12 ? null : best.digit
+}
+
+function WorkCanvas({ answerDigitCount, onSubmitAnswer, question, status, text }) {
+  const workCanvasRef = useRef(null)
+  const answerCanvasRefs = useRef([])
+  const answerPointsRef = useRef([])
+  const drawingRef = useRef(null)
+  const undoStackRef = useRef([])
+  const [hasUndo, setHasUndo] = useState(false)
+  const [hasAnswerInk, setHasAnswerInk] = useState(false)
+  const [recognizedAnswer, setRecognizedAnswer] = useState(null)
+  const [readError, setReadError] = useState(false)
+  const [isReadingWork, setIsReadingWork] = useState(false)
+
+  useEffect(() => {
+    const canvases = [workCanvasRef.current, ...answerCanvasRefs.current].filter(Boolean)
+
+    function resizeCanvases() {
+      canvases.forEach((canvas) => prepareDrawingCanvas(canvas, { grid: canvas === workCanvasRef.current }))
+    }
+
+    resizeCanvases()
+    window.addEventListener('resize', resizeCanvases)
+
+    return () => window.removeEventListener('resize', resizeCanvases)
+  }, [answerDigitCount])
+
+  function getCanvasPoint(canvas, event) {
+    const rect = canvas.getBoundingClientRect()
+
+    return {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+    }
+  }
+
+  function recordAnswerLine(index, startPoint, endPoint) {
+    const steps = Math.max(1, Math.ceil(Math.hypot(endPoint.x - startPoint.x, endPoint.y - startPoint.y) / 4))
+
+    for (let step = 0; step <= steps; step += 1) {
+      const progress = step / steps
+      answerPointsRef.current[index].push({
+        x: startPoint.x + (endPoint.x - startPoint.x) * progress,
+        y: startPoint.y + (endPoint.y - startPoint.y) * progress,
+      })
+    }
+  }
+
+  function startDrawing(event, canvas, type, answerIndex = null) {
+    const context = canvas.getContext('2d')
+    const point = getCanvasPoint(canvas, event)
+
+    if (type === 'work') {
+      undoStackRef.current = [...undoStackRef.current.slice(-9), canvas.toDataURL()]
+      setHasUndo(true)
+    } else {
+      setHasAnswerInk(true)
+      setRecognizedAnswer(null)
+      setReadError(false)
+      setIsReadingWork(false)
+      answerPointsRef.current[answerIndex] ??= []
+      answerPointsRef.current[answerIndex].push(point)
+    }
+
+    drawingRef.current = { answerIndex, canvas, point, type }
+    canvas.setPointerCapture(event.pointerId)
+
+    context.beginPath()
+    context.arc(point.x, point.y, type === 'work' ? 2 : 4, 0, Math.PI * 2)
+    context.fillStyle = '#14213d'
+    context.fill()
+  }
+
+  function draw(event) {
+    if (!drawingRef.current) return
+
+    const { answerIndex, canvas, point, type } = drawingRef.current
+    const context = canvas.getContext('2d')
+    const nextPoint = getCanvasPoint(canvas, event)
+
+    context.beginPath()
+    context.moveTo(point.x, point.y)
+    context.lineTo(nextPoint.x, nextPoint.y)
+    context.stroke()
+
+    if (type === 'answer') {
+      recordAnswerLine(answerIndex, point, nextPoint)
+    }
+
+    drawingRef.current = { answerIndex, canvas, point: nextPoint, type }
+  }
+
+  function stopDrawing(event) {
+    const activeCanvas = drawingRef.current?.canvas
+    drawingRef.current = null
+
+    if (activeCanvas?.hasPointerCapture(event.pointerId)) {
+      activeCanvas.releasePointerCapture(event.pointerId)
+    }
+  }
+
+  function clearCanvas(canvas) {
+    const context = canvas.getContext('2d')
+    const rect = canvas.getBoundingClientRect()
+
+    context.fillStyle = '#ffffff'
+    context.fillRect(0, 0, rect.width, rect.height)
+  }
+
+  function clearAll() {
+    if (workCanvasRef.current) clearCanvas(workCanvasRef.current)
+    answerCanvasRefs.current.filter(Boolean).forEach(clearCanvas)
+    answerPointsRef.current = []
+    undoStackRef.current = []
+    setHasUndo(false)
+    setHasAnswerInk(false)
+    setRecognizedAnswer(null)
+    setReadError(false)
+    setIsReadingWork(false)
+  }
+
+  function undoWork() {
+    const canvas = workCanvasRef.current
+    const snapshot = undoStackRef.current.pop()
+
+    if (!snapshot) return
+
+    const context = canvas.getContext('2d')
+    const rect = canvas.getBoundingClientRect()
+    const image = new Image()
+
+    image.onload = () => {
+      context.fillStyle = '#ffffff'
+      context.fillRect(0, 0, rect.width, rect.height)
+      context.drawImage(image, 0, 0, rect.width, rect.height)
+    }
+    image.src = snapshot
+    setHasUndo(undoStackRef.current.length > 0)
+  }
+
+  function getLocalRecognizedAnswer() {
+    const digits = answerCanvasRefs.current
+      .slice(0, answerDigitCount)
+      .map((canvas, index) => {
+        const points = answerPointsRef.current[index] ?? []
+        return recognizeDigitFromPoints(points) ?? (canvas ? recognizeDigit(canvas) : null)
+      })
+
+    if (digits.some((digit) => digit === null)) {
+      return null
+    }
+
+    return Number(digits.join(''))
+  }
+
+  function makeRecognitionImage() {
+    const workCanvas = workCanvasRef.current
+    const answerCanvases = answerCanvasRefs.current.slice(0, answerDigitCount).filter(Boolean)
+    const padding = 28
+    const labelHeight = 26
+    const answerGap = 10
+    const answerHeight = answerCanvases.length > 0 ? Math.max(...answerCanvases.map((canvas) => canvas.height)) : 0
+    const answerWidth = answerCanvases.reduce((sum, canvas) => sum + canvas.width, 0) + Math.max(0, answerCanvases.length - 1) * answerGap
+    const width = Math.max(workCanvas.width, answerWidth) + padding * 2
+    const height = padding * 3 + labelHeight * 2 + workCanvas.height + answerHeight
+    const outputCanvas = document.createElement('canvas')
+    const context = outputCanvas.getContext('2d')
+
+    outputCanvas.width = width
+    outputCanvas.height = height
+    context.fillStyle = '#ffffff'
+    context.fillRect(0, 0, width, height)
+    context.fillStyle = '#14213d'
+    context.font = 'bold 24px Arial'
+    context.fillText(text.workArea, padding, padding + 20)
+    context.drawImage(workCanvas, padding, padding + labelHeight)
+    context.fillText(text.finalAnswer, padding, padding * 2 + labelHeight + workCanvas.height + 20)
+
+    let x = padding
+    const y = padding * 2 + labelHeight * 2 + workCanvas.height
+    answerCanvases.forEach((canvas) => {
+      context.strokeStyle = '#8bbfc5'
+      context.lineWidth = 3
+      context.strokeRect(x, y, canvas.width, canvas.height)
+      context.drawImage(canvas, x, y)
+      x += canvas.width + answerGap
+    })
+
+    return outputCanvas.toDataURL('image/png')
+  }
+
+  async function recognizeWithGroq() {
+    const response = await fetch('/api/recognize-work', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        imageDataUrl: makeRecognitionImage(),
+        question: describeQuestion(question),
+      }),
+    })
+
+    if (!response.ok) return null
+
+    const result = await response.json()
+    const answer = String(result.answer ?? '').replace(/\D/g, '')
+
+    return answer === '' ? null : Number(answer)
+  }
+
+  async function submitWork() {
+    if (isReadingWork || status !== 'ready') return
+
+    setIsReadingWork(true)
+    setReadError(false)
+
+    const answer = await recognizeWithGroq().catch(() => null) ?? getLocalRecognizedAnswer()
+
+    setIsReadingWork(false)
+
+    if (!Number.isFinite(answer)) {
+      setRecognizedAnswer(null)
+      setReadError(true)
+      return
+    }
+
+    setRecognizedAnswer(answer)
+    setReadError(false)
+    onSubmitAnswer(answer)
+  }
+
+  return (
+    <section className="work-panel" aria-labelledby="work-title">
+      <div className="work-panel-header">
+        <div>
+          <h2 id="work-title">{text.workArea}</h2>
+          <p>{text.workHint}</p>
+        </div>
+        <div className="work-tools">
+          <button className="secondary compact-button" type="button" onClick={undoWork} disabled={!hasUndo || status !== 'ready'}>
+            {text.undoWork}
+          </button>
+          <button className="secondary compact-button" type="button" onClick={clearAll} disabled={status !== 'ready'}>
+            {text.clearWork}
+          </button>
+        </div>
+      </div>
+
+      <canvas
+        ref={workCanvasRef}
+        className="scratch-canvas"
+        aria-label={text.workArea}
+        onPointerCancel={stopDrawing}
+        onPointerDown={(event) => startDrawing(event, workCanvasRef.current, 'work')}
+        onPointerLeave={stopDrawing}
+        onPointerMove={draw}
+        onPointerUp={stopDrawing}
+      />
+
+      <div className="final-answer-panel">
+        <div>
+          <h3>{text.finalAnswer}</h3>
+          <p>{text.finalAnswerHint}</p>
+        </div>
+        <div className="digit-canvas-row">
+          {Array.from({ length: answerDigitCount }, (_, index) => (
+            <canvas
+              key={index}
+              ref={(canvas) => {
+                answerCanvasRefs.current[index] = canvas
+              }}
+              className="digit-canvas"
+              aria-label={`${text.finalAnswer} ${index + 1}`}
+              onPointerCancel={stopDrawing}
+              onPointerDown={(event) => startDrawing(event, answerCanvasRefs.current[index], 'answer', index)}
+              onPointerLeave={stopDrawing}
+              onPointerMove={draw}
+              onPointerUp={stopDrawing}
+            />
+          ))}
+        </div>
+      </div>
+
+      {recognizedAnswer !== null ? (
+        <p className="work-submitted">{text.recognizedAnswer}: {recognizedAnswer}</p>
+      ) : null}
+      {isReadingWork ? <p className="feedback">{text.readingWork}</p> : null}
+      {readError ? <p className="feedback incorrect">{text.answerNotRead}</p> : null}
+
+      <button className="primary" type="button" onClick={submitWork} disabled={!hasAnswerInk || isReadingWork || status !== 'ready'}>
+        {text.submitWork}
+      </button>
+    </section>
+  )
+}
+
 function App() {
   const [view, setView] = useState('home')
   const [language, setLanguage] = useState('bm')
@@ -661,6 +1261,7 @@ function App() {
   const [basicOperationId, setBasicOperationId] = useState('basicMultiply')
   const [difficulty, setDifficulty] = useState('medium')
   const [question, setQuestion] = useState(() => createQuestion(3, 'basic'))
+  const [questionKey, setQuestionKey] = useState(0)
   const [choices, setChoices] = useState(() => makeChoices(question.answer))
   const [answerMode, setAnswerMode] = useState('input')
   const [typedAnswer, setTypedAnswer] = useState('')
@@ -693,6 +1294,7 @@ function App() {
 
   function resetAnswerState(nextQuestion) {
     setQuestion(nextQuestion)
+    setQuestionKey((value) => value + 1)
     setChoices(makeChoices(nextQuestion.answer))
     setTypedAnswer('')
     setSelectedAnswer(null)
@@ -708,8 +1310,13 @@ function App() {
     setView('practice')
   }
 
-  function checkAnswer() {
-    const submittedAnswer = answerMode === 'input' ? Number(typedAnswer) : selectedAnswer
+  function checkAnswer(recognizedAnswer) {
+    const submittedAnswer =
+      answerMode === 'work'
+        ? recognizedAnswer
+        : answerMode === 'input'
+          ? Number(typedAnswer)
+          : selectedAnswer
 
     if (!Number.isFinite(submittedAnswer) || status !== 'ready') {
       return
@@ -743,7 +1350,11 @@ function App() {
 
   const canCheck =
     status === 'ready' &&
-    (answerMode === 'input' ? typedAnswer.trim() !== '' : selectedAnswer !== null)
+    (answerMode === 'input'
+      ? typedAnswer.trim() !== ''
+      : answerMode === 'mcq'
+        ? selectedAnswer !== null
+        : false)
 
   const answerText = `${question.answer}${question.answerLabel ? ` ${question.answerLabel}` : ''}`
   const text = uiText[language]
@@ -817,13 +1428,14 @@ function App() {
           onCheck={checkAnswer}
           onNext={nextQuestion}
           onToggleHint={() => setShowHint((value) => !value)}
-          onToggleMode={() => {
-            setAnswerMode((mode) => (mode === 'input' ? 'mcq' : 'input'))
+          onChangeMode={(nextMode) => {
+            setAnswerMode(nextMode)
             setTypedAnswer('')
             setSelectedAnswer(null)
             setStatus('ready')
           }}
           question={question}
+          questionKey={questionKey}
           selectedAnswer={selectedAnswer}
           setSelectedAnswer={setSelectedAnswer}
           setTypedAnswer={setTypedAnswer}
@@ -1003,11 +1615,12 @@ function PracticeScreen({
   feedbackStatus,
   language,
   onBack,
+  onChangeMode,
   onCheck,
   onNext,
   onToggleHint,
-  onToggleMode,
   question,
+  questionKey,
   selectedAnswer,
   setSelectedAnswer,
   setTypedAnswer,
@@ -1026,7 +1639,9 @@ function PracticeScreen({
         ? `${text.answerWas}: ${answerText}`
         : answerMode === 'input'
           ? text.writeAnswer
-          : text.pickAnswer
+          : answerMode === 'mcq'
+            ? text.pickAnswer
+            : text.workAnswer
 
   return (
     <section className="screen practice-screen" aria-labelledby="practice-title">
@@ -1038,9 +1653,14 @@ function PracticeScreen({
           <h1 id="practice-title">{topicDisplay.label}</h1>
           <p>{currentTopic.id?.startsWith('basic') ? difficultyDisplay.name : getGradeLabel(currentGrade, language)}</p>
         </div>
-        <button className="quiet-button" type="button" onClick={onToggleMode}>
-          {answerMode === 'input' ? text.mcqMode : text.inputMode}
-        </button>
+        <label className="mode-select">
+          <span>{text.answerMode}</span>
+          <select value={answerMode} onChange={(event) => onChangeMode(event.target.value)}>
+            <option value="input">{text.inputMode}</option>
+            <option value="mcq">{text.mcqMode}</option>
+            <option value="work">{text.workMode}</option>
+          </select>
+        </label>
       </header>
 
       <ScoreSummary attempts={attempts} language={language} score={score} />
@@ -1073,7 +1693,7 @@ function PracticeScreen({
               value={typedAnswer}
             />
           </label>
-        ) : (
+        ) : answerMode === 'mcq' ? (
           <div className="answer-grid" aria-label="Pilihan jawapan">
             {choices.map((choice) => (
               <button
@@ -1087,6 +1707,15 @@ function PracticeScreen({
               </button>
             ))}
           </div>
+        ) : (
+          <WorkCanvas
+            answerDigitCount={String(Math.abs(question.answer)).length}
+            key={questionKey}
+            onSubmitAnswer={onCheck}
+            question={question}
+            status={status}
+            text={text}
+          />
         )}
 
         <p className={`feedback ${feedbackStatus}`}>{feedback}</p>
@@ -1095,14 +1724,16 @@ function PracticeScreen({
           <button className="secondary" type="button" onClick={onToggleHint}>
             {showHint ? text.hideHint : text.hint}
           </button>
-          {status === 'ready' ? (
+          {status === 'ready' && answerMode !== 'work' ? (
             <button className="primary" type="button" onClick={onCheck} disabled={!canCheck}>
               {text.check}
             </button>
-          ) : (
+          ) : status !== 'ready' ? (
             <button className="primary" type="button" onClick={onNext}>
               {text.next}
             </button>
+          ) : (
+            <span className="work-action-spacer" aria-hidden="true"></span>
           )}
         </div>
       </section>
